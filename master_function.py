@@ -1,73 +1,9 @@
-
-'''
-↓↓↓↓↓↓↓↓↓IMPORTANT READ FIRST↓↓↓↓↓↓↓↓↓
-||||||||||||||||||||||||||||||||||||||||
-
-To properly use this file, please use the following guidelines:
-    
-    1. Put this file in the directory used by the interpreter
-    2. In SPYDER, the directory is generally on the top right
-    3. Alternatively, you can open this file and execute it
-
-PUT THIS FILE IN THE PYTHON DIRECTORY IN ORDER TO PROPERLY IMPORT ITS FUNCTIONS
-
-||||||||||||||||||||||||||||||||||||||||
-↑↑↑↑↑↑↑↑↑IMPORTANT READ FIRST↑↑↑↑↑↑↑↑↑
-'''
-
 import datetime
-import pytz
-import pandas                    as pd
-import MetaTrader5               as mt5
-import matplotlib.pyplot         as plt
-import numpy                     as np
-import cot_reports               as cot
-import requests
-import json  
 
-now = datetime.datetime.now()
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
-assets = ['EURUSD', 'USDCHF', 'GBPUSD', 'USDCAD', 'AUDUSD', 'NZDUSD', 'EURGBP', 'EURCHF', 'EURCAD', 'EURAUD']
- 
-def get_quotes(time_frame, year = 2005, month = 1, day = 1, asset = "EURUSD"):    
-    if not mt5.initialize(): 
-        print("initialize() failed, error code =", mt5.last_error()) 
-        quit()
-    timezone = pytz.timezone("Europe/Paris")
-    time_from = datetime.datetime(year, month, day, tzinfo = timezone)
-    time_to = datetime.datetime.now(timezone) + datetime.timedelta(days=1)
-    rates = mt5.copy_rates_range(asset, time_frame, time_from, time_to)
-    rates_frame = pd.DataFrame(rates)
-    
-    return rates_frame    
-
-def mass_import(asset, time_frame):
-    if time_frame == 'M15':
-        data = get_quotes(mt5.TIMEFRAME_M15, 2023, 6, 1, asset = assets[asset])
-        data = data.iloc[:, 1:5].values
-        data = data.round(decimals = 5)    
-    if time_frame == 'M30':
-        data = get_quotes(mt5.TIMEFRAME_M30, 2023, 6, 1, asset = assets[asset])
-        data = data.iloc[:, 1:5].values
-        data = data.round(decimals = 5)              
-    if time_frame == 'H1':
-        data = get_quotes(mt5.TIMEFRAME_H1, 2015, 1, 1, asset = assets[asset])
-        data = data.iloc[:, 1:5].values
-        data = data.round(decimals = 5)         
-    if time_frame == 'D1':
-        data = get_quotes(mt5.TIMEFRAME_D1, 2003, 1, 1, asset = assets[asset])
-        data = data.iloc[:, 1:5].values
-        data = data.round(decimals = 5)        
-    if time_frame == 'W1':
-        data = get_quotes(mt5.TIMEFRAME_W1, 2002, 1, 1, asset = assets[asset])
-        data = data.iloc[:, 1:5].values
-        data = data.round(decimals = 5)        
-    if time_frame == 'M1':
-        data = get_quotes(mt5.TIMEFRAME_MN1, 2000, 1, 1, asset = assets[asset])
-        data = data.iloc[:, 1:5].values
-        data = data.round(decimals = 5)             
-    
-    return data 
 
 def data_preprocessing(data, num_lags, train_test_split):
     # Prepare the data for training
@@ -141,44 +77,26 @@ def direct_mpf(data, num_lags, train_test_split, forecast_horizon):
     
     return x_train, y_train, x_test, y_test
 
-def import_cot_data(start_year, end_year, market):
-    df = pd.DataFrame()
-    for i in range(start_year, end_year + 1):
-        single_year = pd.DataFrame(cot.cot_year(i, cot_report_type='traders_in_financial_futures_fut')) 
-        df = pd.concat([single_year, df], ignore_index=True)
-    new_df = df.loc[:, ['Market_and_Exchange_Names',
-                        'Report_Date_as_YYYY-MM-DD',
-                        'Pct_of_OI_Dealer_Long_All',
-                        'Pct_of_OI_Dealer_Short_All',
-                        'Pct_of_OI_Lev_Money_Long_All',                    
-                        'Pct_of_OI_Lev_Money_Short_All']]
-    new_df['Report_Date_as_YYYY-MM-DD'] = pd.to_datetime(new_df['Report_Date_as_YYYY-MM-DD'])
-    new_df = new_df.sort_values(by='Report_Date_as_YYYY-MM-DD')
-    data = new_df[new_df['Market_and_Exchange_Names'] == market]
-    data['Net_COT'] = (data['Pct_of_OI_Lev_Money_Long_All'] - \
-                       data['Pct_of_OI_Lev_Money_Short_All']) - \
-                      (data['Pct_of_OI_Dealer_Long_All'] -\
-                       data['Pct_of_OI_Dealer_Short_All'])                
-    
-    return data
 
-def plot_train_test_values(window, train_window, y_train, y_test, y_predicted):
-    prediction_window = window
-    first = train_window
-    second = window - first
+def plot_train_test_values(window_total, window_train, y_train, y_test, y_predicted):
+    window_test_predict = window_total - window_train
+    # reshape 函数的第一个参数是需要重塑的数组 y_predicted，第二个参数是新的形状 (-1, 1)。在新的形状中，-1 表示这一维的大小将根据数组的总长度和其他维度的大小自动计算，以确保元素总数不变。1 表示第二维的大小固定为 1。
     y_predicted = np.reshape(y_predicted, (-1, 1))
     y_test = np.reshape(y_test, (-1, 1))
-    plotting_time_series = np.zeros((prediction_window, 3))
-    plotting_time_series[0:first, 0] = y_train[-first:]
-    plotting_time_series[first:, 1] = y_test[0:second, 0]
-    plotting_time_series[first:, 2] = y_predicted[0:second, 0] 
-    plotting_time_series[0:first, 1] = plotting_time_series[0:first, 1] / 0
-    plotting_time_series[0:first, 2] = plotting_time_series[0:first, 2] / 0
-    plotting_time_series[first:, 0] = plotting_time_series[first:, 0] / 0
+    
+    plotting_time_series = np.zeros((window_total, 3))
+    # ploting the Training data
+    plotting_time_series[0:window_train, 0] = y_train[-window_train:]
+    # ploting the Test data
+    plotting_time_series[window_train:, 1] = y_test[0:window_test_predict, 0]
+    # ploting the Predicted data
+    plotting_time_series[window_train:, 2] = y_predicted[0:window_test_predict, 0] 
+    
     plt.plot(plotting_time_series[:, 0], label = 'Training data', color = 'black', linewidth = 2.5)
     plt.plot(plotting_time_series[:, 1], label = 'Test data', color = 'black', linestyle = 'dashed', linewidth = 2)
     plt.plot(plotting_time_series[:, 2], label = 'Predicted data', color = 'red', linewidth = 1)
-    plt.axvline(x = first, color = 'black', linestyle = '--', linewidth = 1)
+    plt.axvline(x = window_train, color = 'black', linestyle = '--', linewidth = 1)
+    
     plt.grid()
     plt.legend()
 
@@ -225,19 +143,6 @@ def calculate_directional_accuracy(predicted_returns, real_returns):
         
     return directional_accuracy * 100
 
-def import_crypto(symbol, interval = '1h'): 
-    # Getting the original link from Binance
-    url = 'https://api.binance.com/api/v1/klines'
-    # Linking the link with the Cryptocurrency and the time frame
-    link = url + '?symbol=' + symbol + '&interval=' + interval
-    # Requesting the data in the form of text
-    data = json.loads(requests.get(link).text)
-    # Converting the text data to dataframe
-    data = np.array(data)
-    data = data.astype(np.float)
-    data = data[:, 1:5]
-    
-    return data
 
 def multiple_data_preprocessing(data, train_test_split):
     data = add_column(data, 4)
