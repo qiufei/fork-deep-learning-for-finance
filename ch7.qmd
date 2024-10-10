@@ -9,9 +9,19 @@ from master_function import plot_train_test_values, calculate_accuracy, model_bi
 from sklearn.metrics import mean_squared_error
 
 import tushare as ts
-# 设置token并初始化pro接口
-ts.set_token('ba1646815a79a63470552889a69f957f5544bef01d3f082159bf8474')
+
+import configparser
+# 读取配置文件
+config = configparser.ConfigParser()
+config.read(r'D:\do\fnotes\config.ini') 
+
+
+# 从配置文件中获取token
+token = config['tushare']['token']
+ts.set_token(token)
+# 初始化pro接口
 pro = ts.pro_api()
+
 ```
 
 
