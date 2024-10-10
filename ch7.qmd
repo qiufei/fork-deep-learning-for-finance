@@ -13,11 +13,11 @@ import tushare as ts
 import configparser
 # 读取配置文件
 config = configparser.ConfigParser()
-config.read(r'D:\do\fnotes\config.ini') 
+config.read(r'D:\do\fnotes\my_config.ini') 
 
 
 # 从配置文件中获取token
-token = config['tushare']['token']
+token = config['tokens']['tushare']
 ts.set_token(token)
 # 初始化pro接口
 pro = ts.pro_api()
@@ -27,7 +27,7 @@ pro = ts.pro_api()
 
 ```{python}
 # 获取数据
-df = pro.query('daily', ts_code='000001.SZ', start_date='20130701', end_date='20240718')
+df = pro.query('daily', ts_code='000001.SZ', start_date='20190701', end_date='20240718')
 
 # 选取trade_date和close列
 close = df[['trade_date', 'close']].sort_values('trade_date')
