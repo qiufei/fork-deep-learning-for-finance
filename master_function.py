@@ -87,9 +87,12 @@ def plot_train_test_values(window_total, window_train, y_train, y_test, y_predic
     plotting_time_series = np.zeros((window_total, 3))
     # ploting the Training data
     plotting_time_series[0:window_train, 0] = y_train[-window_train:]
+    plotting_time_series[window_train:, 0] = np.nan
     # ploting the Test data
+    plotting_time_series[:window_train, 1] = np.nan
     plotting_time_series[window_train:, 1] = y_test[0:window_test_predict, 0]
     # ploting the Predicted data
+    plotting_time_series[:window_train, 2] = np.nan 
     plotting_time_series[window_train:, 2] = y_predicted[0:window_test_predict, 0] 
     
     plt.plot(plotting_time_series[:, 0], label = 'Training data', color = 'black', linewidth = 2.5)

@@ -1,0 +1,480 @@
+## 设定
+
+```{python}
+
+import keras
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_squared_error
+
+from master_function import data_preprocessing
+from master_function import plot_train_test_values, calculate_accuracy, model_bias,calculate_directional_accuracy
+
+
+import tushare as ts
+
+import configparser
+# 读取配置文件
+config = configparser.ConfigParser()
+config.read(r'D:\do\fnotes\my_config.ini') 
+
+
+# 从配置文件中获取token
+token = config['tokens']['tushare']
+ts.set_token(token)
+# 初始化pro接口
+pro = ts.pro_api()
+
+```
+
+
+## fractional differentiation
+
+
+```{python}
+'''
+上证指数 EXAMPLE
+'''
+
+from fracdiff.sklearn import Fracdiff
+
+
+data = pro.index_daily(ts_code='000001.SH', start_date='20000101', end_date='20240630')
+
+# Fetch  price data
+data = np.array(data['close']).reshape(-1, 1)
+
+
+
+
+# Calculate the fractional differentiation
+window = 150
+f = Fracdiff(0.48, mode = 'valid', window = window)
+frac_data = f.fit_transform(data)
+
+# Calculate a simple differencing function for comparison
+diff_data = np.reshape(np.diff(data), (-1, 1))
+
+# Harmonizing time indices
+data = data[window - 1:, ]
+diff_data = diff_data[window - 2:, ]
+
+# Plotting
+fig, axes = plt.subplots(nrows = 3, ncols = 1)
+
+axes[0].plot(data[5:,], label = 'S&P 500', color = 'blue', linewidth = 1)
+axes[1].plot(frac_data[5:,], label = 'Fractionally Differentiated S&P 500 (0.48)', color = 'red', linewidth = 1)
+axes[2].plot(diff_data[5:,], label = 'Differenced S&P 500', color = 'green', linewidth = 1)
+
+axes[0].legend()
+axes[1].legend()
+axes[2].legend()
+
+axes[0].grid()
+axes[1].grid()
+axes[2].grid()   
+
+axes[1].axhline(y = 0, color = 'black', linestyle = 'dashed') 
+axes[2].axhline(y = 0, color = 'black', linestyle = 'dashed')  
+
+# Checking for stationarity
+from statsmodels.tsa.stattools import adfuller
+
+print('p-value: %f' % adfuller(data)[1])
+print('p-value: %f' % adfuller(frac_data)[1])
+print('p-value: %f' % adfuller(diff_data)[1])
+
+'''
+shenzhen index EXAMPLE
+'''
+
+data = pro.index_daily(ts_code='399001.SZ', start_date='20000101', end_date='20240630')
+
+data = np.array(data['close']).reshape(-1, 1)
+
+# Calculate the fractional differentiation
+window = 100
+f = Fracdiff(0.20, mode = 'valid', window = window)
+frac_data = f.fit_transform(data)
+
+# Calculate a simple differencing function for comparison
+diff_data = np.reshape(np.diff(data[:, 0]), (-1, 1))
+
+# Harmonizing time indices
+data = data[window - 1:, ]
+diff_data = diff_data[window - 2:, ]
+
+# Plotting
+fig, axes = plt.subplots(nrows = 3, ncols = 1)
+
+axes[0].plot(data[5:,], label = 'shenzhen index', color = 'blue', linewidth = 1)
+axes[1].plot(frac_data[5:,], label = 'Fractionally Differentiated shenzhen index (0.20)', color = 'orange', linewidth = 1)
+axes[2].plot(diff_data[5:,], label = 'Differenced shenzhen index', color = 'green', linewidth = 1)
+
+axes[0].legend()
+axes[1].legend()
+axes[2].legend()
+
+axes[0].grid()
+axes[1].grid()
+axes[2].grid()   
+
+axes[2].axhline(y = 0, color = 'black', linestyle = 'dashed')  
+
+# Checking for stationarity
+from statsmodels.tsa.stattools import adfuller
+
+print('p-value: %f' % adfuller(data)[1])
+print('p-value: %f' % adfuller(frac_data)[1])
+print('p-value: %f' % adfuller(diff_data)[1])
+
+```
+
+## forecasting threshold
+
+
+```{python}
+
+from keras.models import Sequential
+from keras.layers import Dense
+from master_function import plot_train_test_values, forecasting_threshold
+
+# Setting the hyperparameters
+num_lags = 500
+train_test_split = 0.80 
+num_neurons_in_hidden_layers = 256 
+num_epochs = 100 
+batch_size = 10
+threshold = 0.0015
+
+
+# Creating the training and test sets
+x_train, y_train, x_test, y_test = data_preprocessing(data, num_lags, train_test_split)
+
+# Designing the architecture of the model
+model = Sequential()
+
+# First hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, input_dim = num_lags, activation = 'relu'))  
+
+# Second hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, activation = 'relu'))  
+
+# Output layer
+model.add(Dense(1))
+
+# Compiling
+model.compile(loss = 'mean_squared_error', optimizer = 'adam')
+
+# Fitting
+model.fit(x_train, y_train, epochs = num_epochs, batch_size = batch_size)
+
+# Predicting
+y_predicted = model.predict(x_test)
+
+# Threshold function
+y_predicted = forecasting_threshold(y_predicted, threshold)
+
+
+# 确保 y_train 是一维数组
+# 为什么要这样做？ 
+y_train = y_train.flatten()
+
+# Plotting
+plot_train_test_values(100, 50, y_train, y_test, y_predicted)
+
+```
+
+## Continuous Retraining
+
+
+```{python}
+
+from sklearn.linear_model import LinearRegression
+
+# Setting the hyperparameters
+num_lags = 15
+train_test_split = 0.80 
+
+# Creating the training and test sets
+x_train, y_train, x_test, y_test = data_preprocessing(data, num_lags, train_test_split)
+
+
+# 确保 x_train 和 y_train 是二维数组
+x_train = np.reshape(x_train, (x_train.shape[0], -1))
+y_train = np.reshape(y_train, (y_train.shape[0], -1))
+
+# Fitting the model
+model = LinearRegression()
+model.fit(x_train, y_train)
+
+# Predicting in-sample
+y_predicted_train = np.reshape(model.predict(x_train), (-1, 1))
+
+# Store the new forecasts
+y_predicted = []
+
+# Reshape x_test to forecast one period
+latest_values = np.transpose(np.reshape(x_test[0], (-1, 1)))
+
+# Isolate the real values for comparison
+y_test_store = y_test
+y_train_store = y_train
+
+for i in range(len(y_test)):
+    try: 
+        # Predict over the first x_test data
+        predicted_value = model.predict(latest_values)
+        # Store the prediction in an array
+        y_predicted = np.append(y_predicted, predicted_value)
+        # Adding the first test values to the last training values
+        x_train = np.concatenate((x_train, latest_values), axis = 0)
+        y_train = np.append(y_train, y_test[0])
+        # Removing the first test values from the test arrays
+        y_test = y_test[1:]
+        x_test = x_test[1:, ]
+        # Retraining
+        model.fit(x_train, y_train)
+        # Selecting the first values of the test set
+        latest_values = np.transpose(np.reshape(x_test[0], (-1, 1)))
+    except IndexError:
+        pass
+    
+# plotting
+plot_train_test_values(100, 50, y_train, y_test_store, y_predicted)
+
+# why why why
+# 确保 y_predicted_train 和 y_train_store 是一维数组
+y_predicted_train = np.reshape(y_predicted_train, (-1))
+y_train_store = np.reshape(y_train_store, (-1))
+
+# 确保 y_predicted 和 y_test_store 是一维数组
+y_predicted = np.reshape(y_predicted, (-1))
+y_test_store = np.reshape(y_test_store, (-1))
+
+# Performance evaluation
+print('---')
+print('Accuracy Train = ', round(calculate_accuracy(y_predicted_train, y_train_store), 2), '%')
+print('Accuracy Test = ', round(calculate_accuracy(y_predicted, y_test_store), 2), '%')
+print('RMSE Train = ', round(np.sqrt(mean_squared_error(y_predicted_train, y_train_store)), 10))
+print('RMSE Test = ', round(np.sqrt(mean_squared_error(y_predicted, y_test_store)), 10))
+print('Correlation In-Sample Predicted/Train = ', round(np.corrcoef(np.reshape(y_predicted_train, (-1)), y_train_store)[0][1], 3))
+print('Correlation Out-of-Sample Predicted/Test = ', round(np.corrcoef(np.reshape(y_predicted, (-1)), np.reshape(y_test_store, (-1)))[0][1], 3))
+print('Model Bias = ', round(model_bias(y_predicted), 2))
+print('---')
+
+
+```
+
+
+## recursive MPF
+
+
+```{python}
+
+from keras.models import Sequential
+from keras.layers import Dense
+
+from master_function import recursive_mpf
+
+
+# Setting the hyperparameters
+num_lags = 500
+train_test_split = 0.8
+num_neurons_in_hidden_layers = 100
+num_epochs = 200
+batch_size = 12
+
+# Creating the training and test sets
+x_train, y_train, x_test, y_test = data_preprocessing(data, num_lags, train_test_split)
+
+# Designing the architecture of the model
+model = Sequential()
+
+# First hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, input_dim = num_lags, activation = 'relu'))  
+
+# Second hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, activation = 'relu'))  
+
+# Third hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, activation = 'relu'))  
+
+# Fourth hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, activation = 'relu')) 
+
+# Output layer
+model.add(Dense(1))
+
+# Compiling
+model.compile(loss = 'mean_squared_error', optimizer = 'adam')
+
+# Fitting the model
+model.fit(x_train, np.reshape(y_train, (-1, 1)), epochs = num_epochs, batch_size = batch_size)
+
+# Predicting in-sample
+y_predicted_train = np.reshape(model.predict(x_train), (-1, 1))
+
+# Predicting in the test set on a recursive basis
+x_test, y_predicted = recursive_mpf(x_test, y_test, num_lags, model, architecture = 'MLP')
+
+# Plotting
+plot_train_test_values(1000, 50, y_train, y_test, y_predicted)
+
+# Performance evaluation
+print('---')
+print('Directional Accuracy Test = ', round(calculate_directional_accuracy(y_predicted, y_test), 2), '%')
+print('RMSE Test = ', round(np.sqrt(mean_squared_error(y_predicted, y_test)), 10))
+print('Correlation Out-of-Sample Predicted/Test = ', round(np.corrcoef(np.reshape(y_predicted, (-1)), np.reshape(y_test, (-1)))[0][1], 3))
+print('---')
+
+
+```
+
+
+
+## direct MPF
+
+
+```{python}
+
+from keras.models import Sequential
+from keras.layers import Dense
+
+from master_function import direct_mpf
+
+# Setting the hyperparameters
+num_lags = 10
+train_test_split = 0.80
+num_neurons_in_hidden_layers = 200
+num_epochs = 200
+batch_size = 10
+forecast_horizon = 18
+
+
+# 确保 data 的形状与模型的输入要求匹配
+data = np.reshape(data, (data.shape[0], -1))
+
+x_train, y_train, x_test, y_test = direct_mpf(data, num_lags, train_test_split, forecast_horizon)
+
+# Designing the architecture of the model
+model = Sequential()
+
+# First hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, input_dim = num_lags, activation = 'relu'))  
+
+# Second hidden layer
+model.add(Dense(num_neurons_in_hidden_layers, activation = 'relu'))  
+
+# Output layer
+model.add(Dense(forecast_horizon))
+
+# Compiling
+model.compile(loss = 'mean_squared_error', optimizer = 'adam')
+
+# Fitting (training) the model
+model.fit(x_train, y_train, epochs = num_epochs, batch_size = batch_size)
+
+# Make predictions
+y_predicted = model.predict(x_test)
+
+# Plotting
+plt.plot(y_predicted[-1], label = 'Predicted data', color = 'red', linewidth = 1)
+plt.plot(y_test[-1], label = 'Test data', color = 'black', linestyle = 'dashed', linewidth = 2)
+plt.grid()
+plt.legend()
+
+# Performance evaluation
+y_test = y_test[-1]
+y_predicted = y_predicted[-1]
+
+print('---')
+print('Directional Accuracy Test = ', round(calculate_directional_accuracy(y_predicted, y_test), 2), '%')
+print('RMSE Test = ', round(np.sqrt(mean_squared_error(y_predicted, y_test)), 10))
+print('Correlation Out-of-Sample Predicted/Test = ', round(np.corrcoef(np.reshape(y_predicted, (-1)), np.reshape(y_test, (-1)))[0][1], 3))
+print('---')
+```
+
+
+## regularization
+
+
+```{python}
+
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping
+
+# Calculating a rolling autocorrelation measure
+rolling_autocorr = pd.DataFrame(data).rolling(window = 20).apply(lambda x: x.autocorr(lag = 1)).dropna()
+rolling_autocorr = np.reshape(np.array(rolling_autocorr), (-1))
+
+# Plotting
+fig, axes = plt.subplots(nrows = 2, ncols = 1)
+
+axes[0].plot(data[-350:,], label = 'S&P 500', linewidth = 1.5)
+axes[1].plot(rolling_autocorr[-350:,], label = '20-Day Autocorrelation', color = 'orange', linewidth = 1.5)
+
+axes[0].legend()
+axes[1].legend()
+
+axes[0].grid()
+axes[1].grid()
+
+axes[1].axhline(y = 0.95, color = 'black', linestyle = 'dashed') 
+
+# Setting the hyperparameters
+num_lags = 500 
+train_test_split = 0.80 
+num_neurons_in_hidden_layers = 128 
+num_epochs = 100 
+batch_size = 20
+
+# Creating the training and test sets
+x_train, y_train, x_test, y_test = data_preprocessing(rolling_autocorr, num_lags, train_test_split)
+
+# Reshape the data for LSTM input
+x_train = x_train.reshape((-1, num_lags, 1))
+x_test = x_test.reshape((-1, num_lags, 1))
+
+# Create the LSTM model
+model = Sequential()
+model.add(LSTM(units = num_neurons_in_hidden_layers, input_shape = (num_lags, 1)))
+
+# Adding batch normalization and dropout
+model.add(BatchNormalization())
+model.add(Dropout(0.1)) 
+
+# Adding the output layer
+model.add(Dense(units = 1))
+
+# Compile the model
+model.compile(loss = 'mean_squared_error', optimizer = 'adam')
+
+# Early stopping implementation
+early_stopping = EarlyStopping(monitor = 'loss', patience = 15, restore_best_weights = True)
+
+# Train the model
+model.fit(x_train, y_train, epochs = num_epochs , batch_size = batch_size, callbacks = [early_stopping])
+
+# Predicting in-sample
+y_predicted_train = np.reshape(model.predict(x_train), (-1, 1))
+
+# Predicting out-of-sample
+y_predicted = np.reshape(model.predict(x_test), (-1, 1))
+
+# plotting
+plot_train_test_values(300, 50, y_train, y_test, y_predicted)
+
+# Performance evaluation
+print('---')
+print('Accuracy Train = ', round(calculate_directional_accuracy(y_predicted_train, y_train), 2), '%')
+print('Accuracy Test = ', round(calculate_directional_accuracy(y_predicted, y_test), 2), '%')
+print('RMSE Train = ', round(np.sqrt(mean_squared_error(y_predicted_train, y_train)), 10))
+print('RMSE Test = ', round(np.sqrt(mean_squared_error(y_predicted, y_test)), 10))
+print('Correlation In-Sample Predicted/Train = ', round(np.corrcoef(np.reshape(y_predicted_train, (-1)), y_train)[0][1], 3))
+print('Correlation Out-of-Sample Predicted/Test = ', round(np.corrcoef(np.reshape(y_predicted, (-1)), np.reshape(y_test, (-1)))[0][1], 3))
+print('---')
+
+```
