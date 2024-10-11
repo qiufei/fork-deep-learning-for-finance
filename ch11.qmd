@@ -106,8 +106,6 @@ print('---')
 from keras.models import Sequential
 from keras.layers import Dense, LSTM
 
-
-
 # Setting the hyperparameters
 num_lags = 100
 train_test_split = 0.80
