@@ -1,0 +1,33 @@
+project:
+  #type: manuscript
+  #post-render: scripts/get_paper_name.py #将论文题目加入到readme文件中
+  output-dir: _output
+#author: "Qiu Fei"
+format: html
+link-citations: true
+extract-media: image # 将生成的图片放到image文件夹中
+# 不知道为什么这段excute代码块不起作用了，暂时注释掉，改成在每个chunk中设置。2024-07-19
+# 因为在某个有了引用的chunk中，没有输出结果，导致引用为空，所以报错。2024-07-22
+execute:
+   eval: true
+   echo: true 
+   warning: false 
+knitr:
+  opts_chunk: 
+    dpi: 300
+    dev: png
+    fig.width: 10
+    fig.height: 6.18
+    out.width: '96%' # 设置输出图片的宽度，默认值是100%，但是这样会导致图片在word中显示不全
+    message: false
+    R.options: 
+      digits: 3
+  opts_knit: 
+    verbose: false
+jupyter: peter
+ # 设定自定义参数 
+params:
+  paper_y: "carbon emission"
+  paper_x: "finance" 
+lang: zh
+editor: source
